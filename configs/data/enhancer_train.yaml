@@ -1,0 +1,20 @@
+_target_: src.data.enhancer_train_datamodule.EnhancerTrainDataModule
+data_dir: ${paths.data_dir}/
+data_list: /lists/basenames/lat_list_nfiq80.txt
+# lat_subdir: /synth_lat_nfiq80/
+lat_subdir: /synth_lats_docs_mixed/
+ref_subdir: /basen_refs_full/
+skel_subdir: /skel/
+bin_subdir: /bin/
+# mask_subdir: /synth_lat_nfiq80_masks/0/
+mask_subdir: /ref_masks_PI/
+occ_mask_subdir: /occ_mask/
+mnt_subdir: /mnt/
+orient_subdir: /dirmap_gt_txt/
+apply_mask: True
+use_ref_mask: True
+# batch_size: 2240 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+batch_size: 6
+train_val_split: [0.7, 0.3]
+num_workers: 8
+pin_memory: True

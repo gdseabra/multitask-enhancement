@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - data: enhancer_predict # choose datamodule with `predict_dataloader()`
+  - model: multitask_enh
+  # - model: enhancer
+  - logger: null
+  - trainer: default
+  - paths: default
+  - extras: default
+  - hydra: default
+
+task_name: "predict"
+
+tags: ["dev"]
+
+# passing checkpoint path is necessary for evaluation
+# ckpt_path: /home/seabra/fingerprint-enhancement/logs/train/runs/2025-08-15_12-07-34/checkpoints/epoch_030.ckpt
+ckpt_path: /home/seabra/fingerprint-enhancement/logs/train/runs/2025-10-24_11-31-25/checkpoints/epoch_022.ckpt
