@@ -347,6 +347,9 @@ class EnhancerLitModule(LightningModule):
         for path in output_paths.values(): os.makedirs(path, exist_ok=True)
         if not self.use_patches:
             dirmap_pred, latent_enh = self.forward(data)
+
+            dirmap_downsampled = F.interpolate(dirmap_pred, scale_factor=1/8, mode="bilinear", align_corners=False)
+        
         else: # Lógica de patches aqui...
             pass
         for i, name in enumerate(names):
@@ -373,7 +376,8 @@ class EnhancerLitModule(LightningModule):
             orig = Image.fromarray(orig)
             orig.save(output_paths['enh'] + '/' + name + '.png')
 
-            dirmap   = dirmap_pred[i, :, :, :]
+            dirmap   = dirmap_downsampled[i, :, :, :]
+
             dirmap   = torch.nn.functional.sigmoid(dirmap)
 
             # mask    = seg_pred[i, 0, :, :]
