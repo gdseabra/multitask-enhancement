@@ -1,31 +1,49 @@
-_target_: src.models.enhancer_module.EnhancerLitModule
+# config.yaml
 
-optimizer:
+# Configuração do LightningModule
+_target_: src.models.multitask_module.EnhancerLitModule
+
+# --- Configurações dos Otimizadores e Schedulers ---
+# Note que temos blocos separados para cada sub-rede.
+
+optimizer_dirmap:
+  _target_: torch.optim.AdamW
+  _partial_: true  # Crucial: não cria o objeto, apenas a configuração.
+  lr: 1e-4        # LR inicial para a dirmap_net
+  weight_decay: 0.0
+
+optimizer_enh:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 1e-4
-  weight_decay: 4e-4
+  lr: 5e-4        # LR inicial (geralmente maior) para a enhancer_net
+  weight_decay: 0.0
 
-scheduler:
+scheduler_dirmap:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: true
   mode: min
   factor: 0.1
-  patience: 2
+  patience: 5     # Paciência para a dirmap_net
 
+scheduler_enh:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.2
+  patience: 8     # Paciência diferente para a enhancer_net
+
+# --- Configuração da Rede ---
 net:
-  _target_: src.models.components.ResUNet.ResUNet
-  # _target_: src.models.components.UNet.UNet
-  in_ch: 1
+  _target_: src.models.components.MultiTaskDirMapEnh.MultiTaskDirMapEnh
   ndim: 2
-  out_ch: 2
 
-# compile model for faster training with pytorch 2.0
+# --- Outros Parâmetros do Módulo ---
 compile: false
+warmup_epochs_dirmap: 0 # Define quantas épocas treinar só a dirmap
 
 # output_path: /storage/seabra/segmentation_study/test_data/tse1k/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
 # output_path: /storage/seabra/segmentation_study/test_data/basen_400/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
 # output_path: /storage/seabra/segmentation_study/test_data/sd27/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
-output_path: /storage/seabra/sd27_test/resunet_nfiq80_docs_masked_lat_fnet_after_docs/
+output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v5_w_1_1/
 
 use_patches: false

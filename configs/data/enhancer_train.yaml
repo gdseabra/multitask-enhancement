@@ -7,14 +7,14 @@ ref_subdir: /basen_refs_full/
 skel_subdir: /skel/
 bin_subdir: /bin/
 # mask_subdir: /synth_lat_nfiq80_masks/0/
-mask_subdir: /ref_masks_PI/
+mask_subdir: /lat_masks_after_docs_synth_lats_docs_mixed/mask/
 occ_mask_subdir: /occ_mask/
 mnt_subdir: /mnt/
-orient_subdir: /dirmap_gt_txt/
+orient_subdir: /dirmap_gt_downsampled_png/
 apply_mask: True
-use_ref_mask: True
+use_ref_mask: False
 # batch_size: 2240 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-batch_size: 6
+batch_size: 12
 train_val_split: [0.7, 0.3]
 num_workers: 8
 pin_memory: True

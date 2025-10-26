@@ -196,38 +196,42 @@ class EnhancerLitModule(LightningModule):
         self.val_loss.reset(); self.val_ori_loss.reset(); self.val_enh_loss.reset(); self.val_loss_best.reset()
 
     def model_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        x, y_dirmap, y_orig, y_bin = batch
+        x, target_dirmap_idx, y_orig, y_bin, mask = batch
         
         # --- Forward ---
         # pred_dirmap são os logits (B, 90, H, W)
         pred_dirmap, pred_enh = self.forward(x)
+
+        pred_dirmap_downscaled = F.interpolate(pred_dirmap, scale_factor=1/8, mode="bilinear", align_corners=False)
         
         # --- Preparar Predições ---
         pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
-        # Converte logits do dirmap para probabilidades (necessário para as novas losses)
-        # pred_dirmap_probs = torch.sigmoid(pred_dirmap)
+        
 
         # --- Preparar Targets ---
         true_orig, true_bin = y_orig[:, 0, :, :], y_bin[:, 0, :, :]
-        true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)
+        
         # Target labels (B, H, W)
-        true_dirmap_idx = true_dirmap.argmax(dim=1)
+        true_dirmap_idx = target_dirmap_idx
 
         
         # --- Preparar Inputs para Loss de Orientação ---
         # Labels precisam ter dimensão de canal: (B, H, W) -> (B, 1, H, W)
-        true_dirmap_labels = true_dirmap_idx.unsqueeze(1)
-        # Usar 'true_dirmap_labels==90' como a máscara ROI: (B, H, W) -> (B, 1, H, W)
-        roi_mask = (true_dirmap_labels != 90).long()
+        true_dirmap_labels = true_dirmap_idx
+
+
+        roi_mask = mask.long()
+
+        # Downsampling para cálculo da loss de coerência a nível de bloco
+        mask_downsampled = F.interpolate(mask.float(), scale_factor=1/8, mode="nearest").long()
 
         # remove values de máscara
-        true_dirmap_labels[true_dirmap_labels == 90] = 0
-
+        true_dirmap_labels[mask_downsampled == 0] = 0
         # --- Calcular Losses ---
         
-        # 1. Loss de Orientação (NOVA LÓGICA)
-        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, roi_mask)
-        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, roi_mask)
+        # 1. Loss de Orientação
+        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap_downscaled, true_dirmap_labels, mask_downsampled)
+        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap_downscaled, mask_downsampled)
         
         # Soma ponderada dos componentes da loss de orientação
         ori_loss = (self.hparams.w_ori * loss_ori_weighted) + \

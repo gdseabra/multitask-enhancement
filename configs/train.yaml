@@ -5,8 +5,7 @@
 defaults:
   - _self_
   - data: enhancer_train # choose datamodule with `train_dataloader()`
-  # - model: enhancer
-  - model: multitask_enh
+  - model: enhancer
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default

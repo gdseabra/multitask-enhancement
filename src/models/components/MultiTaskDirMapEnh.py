@@ -98,10 +98,10 @@ class MultiTaskDirMapEnh(nn.Module):
 
         # --- Step 1: Get orientation map from U-Net ---
         # orientation_map shape: (B, 90, H, W)
-        out_dirmap = self.dirmap_net(x)
+        out_dirmap_logits = self.dirmap_net(x)
         
         # Apply softmax to get probabilities for each orientation at each pixel
-        orientation_probs = torch.softmax(out_dirmap, dim=1)
+        orientation_probs = torch.softmax(out_dirmap_logits, dim=1)
 
         # --- Step 2: Get Gabor filter responses ---
         # gabor_responses shape: (B, 90, H, W)
@@ -119,7 +119,7 @@ class MultiTaskDirMapEnh(nn.Module):
         # --- Step 5: Feed the enhanced map to the segmentation network ---
         out_enh = self.enhancer_net(combined_feature_map)
 
-        return out_dirmap, out_enh
+        return out_dirmap_logits, out_enh
 
 
 
