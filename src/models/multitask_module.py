@@ -31,8 +31,11 @@ class WeightedOrientationLoss(nn.Module):
         num_classes = logits.shape[1]
         
         # Create one-hot target
+        
         target_one_hot = F.one_hot(target.squeeze(1).long(), num_classes=num_classes)
         target_one_hot = target_one_hot.permute(0, 3, 1, 2).float()
+
+        soft_target = F.interpolate(target_one_hot, scale_factor=8, mode="bilinear", align_corners=False)
 
         # Use log_sigmoid for numerical stability
         # log(p) = log(sigmoid(logits)) = log_sigmoid(logits)
@@ -42,8 +45,8 @@ class WeightedOrientationLoss(nn.Module):
         log_one_minus_p = F.logsigmoid(-logits)
 
         # Calculate weighted loss terms
-        loss_pos = self.lambda_pos * target_one_hot * log_p
-        loss_neg = self.lambda_neg * (1 - target_one_hot) * log_one_minus_p
+        loss_pos = self.lambda_pos * soft_target * log_p
+        loss_neg = self.lambda_neg * (1 - soft_target) * log_one_minus_p
         
         loss = -(loss_pos + loss_neg)
 
@@ -196,42 +199,37 @@ class EnhancerLitModule(LightningModule):
         self.val_loss.reset(); self.val_ori_loss.reset(); self.val_enh_loss.reset(); self.val_loss_best.reset()
 
     def model_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        x, target_dirmap_idx, y_orig, y_bin, mask = batch
+        x, true_dirmap_idx, y_orig, y_bin, mask = batch
         
         # --- Forward ---
         # pred_dirmap são os logits (B, 90, H, W)
         pred_dirmap, pred_enh = self.forward(x)
-
-        pred_dirmap_downscaled = F.interpolate(pred_dirmap, scale_factor=1/8, mode="bilinear", align_corners=False)
         
         # --- Preparar Predições ---
         pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
-        
+        # Converte logits do dirmap para probabilidades (necessário para as novas losses)
+        # pred_dirmap_probs = torch.sigmoid(pred_dirmap)
 
         # --- Preparar Targets ---
         true_orig, true_bin = y_orig[:, 0, :, :], y_bin[:, 0, :, :]
-        
-        # Target labels (B, H, W)
-        true_dirmap_idx = target_dirmap_idx
 
         
         # --- Preparar Inputs para Loss de Orientação ---
         # Labels precisam ter dimensão de canal: (B, H, W) -> (B, 1, H, W)
         true_dirmap_labels = true_dirmap_idx
+        # Usar 'true_dirmap_labels==90' como a máscara ROI: (B, H, W) -> (B, 1, H, W)
+        roi_mask = (mask > 0).float()
 
-
-        roi_mask = mask.long()
-
-        # Downsampling para cálculo da loss de coerência a nível de bloco
-        mask_downsampled = F.interpolate(mask.float(), scale_factor=1/8, mode="nearest").long()
+        roi_mask_small = F.interpolate(roi_mask, scale_factor=1/8, mode="nearest").long()
 
         # remove values de máscara
-        true_dirmap_labels[mask_downsampled == 0] = 0
+        true_dirmap_labels[roi_mask_small == 0] = 0
+
         # --- Calcular Losses ---
         
-        # 1. Loss de Orientação
-        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap_downscaled, true_dirmap_labels, mask_downsampled)
-        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap_downscaled, mask_downsampled)
+        # 1. Loss de Orientação (NOVA LÓGICA)
+        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, roi_mask)
+        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, roi_mask)
         
         # Soma ponderada dos componentes da loss de orientação
         ori_loss = (self.hparams.w_ori * loss_ori_weighted) + \
@@ -347,9 +345,6 @@ class EnhancerLitModule(LightningModule):
         for path in output_paths.values(): os.makedirs(path, exist_ok=True)
         if not self.use_patches:
             dirmap_pred, latent_enh = self.forward(data)
-
-            dirmap_downsampled = F.interpolate(dirmap_pred, scale_factor=1/8, mode="bilinear", align_corners=False)
-        
         else: # Lógica de patches aqui...
             pass
         for i, name in enumerate(names):
@@ -376,8 +371,7 @@ class EnhancerLitModule(LightningModule):
             orig = Image.fromarray(orig)
             orig.save(output_paths['enh'] + '/' + name + '.png')
 
-            dirmap   = dirmap_downsampled[i, :, :, :]
-
+            dirmap   = dirmap_pred[i, :, :, :]
             dirmap   = torch.nn.functional.sigmoid(dirmap)
 
             # mask    = seg_pred[i, 0, :, :]

@@ -15,7 +15,7 @@ optimizer_dirmap:
 optimizer_enh:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 5e-4        # LR inicial (geralmente maior) para a enhancer_net
+  lr: 5e-4        # LR inicial para a enhancer_net
   weight_decay: 0.0
 
 scheduler_dirmap:
@@ -44,6 +44,6 @@ warmup_epochs_dirmap: 0 # Define quantas épocas treinar só a dirmap
 # output_path: /storage/seabra/segmentation_study/test_data/tse1k/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
 # output_path: /storage/seabra/segmentation_study/test_data/basen_400/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
 # output_path: /storage/seabra/segmentation_study/test_data/sd27/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
-output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v5_w_1_1/
+output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v4_novo/
 
 use_patches: false
