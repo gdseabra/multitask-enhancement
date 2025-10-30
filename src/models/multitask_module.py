@@ -206,7 +206,8 @@ class EnhancerLitModule(LightningModule):
         pred_dirmap, pred_enh = self.forward(x)
         
         # --- Preparar Predições ---
-        pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
+        # pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
+        pred_bin = pred_enh[:,0,:,:]
         # Converte logits do dirmap para probabilidades (necessário para as novas losses)
         # pred_dirmap_probs = torch.sigmoid(pred_dirmap)
 
@@ -236,8 +237,7 @@ class EnhancerLitModule(LightningModule):
                    (self.hparams.w_coh * loss_ori_coherence)
         
         # 2. Loss de Enhancement (Inalterada)
-        enh_loss = (0.5 * self.mse_criterion(pred_orig, true_orig) + \
-                    0.5 * self.bce_criterion(pred_bin, true_bin))
+        enh_loss = (self.bce_criterion(pred_bin, true_bin))
         
         # 3. Loss Total (Inalterada)
         total_loss = ori_loss + enh_loss

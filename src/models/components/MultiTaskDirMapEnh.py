@@ -80,7 +80,7 @@ class MultiTaskDirMapEnh(nn.Module):
         super(MultiTaskDirMapEnh, self).__init__()
         
         self.dirmap_net = UNet(in_ch=1, out_ch=90, ndim=ndim, chs=chs)
-        self.enhancer_net = ResUNet(in_ch=1, out_ch=2, ndim=ndim)
+        self.enhancer_net = ResUNet(in_ch=1, out_ch=1, ndim=ndim)
 
         self.gabor_layer = GaborConvLayer(
             num_orientations=90, 
