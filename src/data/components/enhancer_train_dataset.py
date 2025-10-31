@@ -27,7 +27,6 @@ class EnhancerTrainDataset(Dataset):
         skel_subdir = '/skel/', 
         bin_subdir = '/bin/', 
         mask_subdir = '/masks/', 
-        ref_mask_subdir = '/ref_masks/',
         mnt_subdir = '/mnt/', 
         orient_subdir = '/orient/',   # NEW: directory with .dir files
         apply_mask = True,
@@ -56,7 +55,6 @@ class EnhancerTrainDataset(Dataset):
         self.skel_subdir  = skel_subdir
         self.bin_subdir   = bin_subdir
         self.mask_subdir  = mask_subdir
-        self.ref_mask_subdir  = ref_mask_subdir
         self.mnt_subdir   = mnt_subdir
         self.orient_subdir = orient_subdir
 
@@ -95,7 +93,7 @@ class EnhancerTrainDataset(Dataset):
                     one_hot[90, i, j] = 1.0
                     continue  # leave as all zeros
                 if angle % 2 != 0:
-                    angle -= 1  # floor to nearest even
+                    angle -= 1  # round down to nearest even
                 idx = angle // 2
                 one_hot[idx, i, j] = 1.0
 
@@ -105,8 +103,6 @@ class EnhancerTrainDataset(Dataset):
 
     def __getitem__(self, ix):
         lat   = Image.open(self.data_dir+self.lat_subdir+self.data[ix]+self.lat_suffix)
-
-        ref_mask  = Image.open(self.data_dir + self.ref_mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
 
         if not self.use_ref_mask:
             mask  = Image.open(self.data_dir + self.mask_subdir  + self.data[ix] + self.mask_suffix)
@@ -139,10 +135,10 @@ class EnhancerTrainDataset(Dataset):
 
         # --- Orientation field (label) ---
         orient_file = self.data_dir + self.orient_subdir + self.data[ix].split('_')[0] + self.orient_suffix
-        # orientation_one_hot = self.load_orientation_field(orient_file, mask)
-        orient_img = Image.open(orient_file).convert("L")
+
+        img = Image.open(orient_file).convert("L")
         to_tensor = transforms.ToTensor()
-        dirmap_target = to_tensor(orient_img)
+        dirmap_target = to_tensor(img)
 
         # 2. Rescale tensor values back to the original [0, 180] range
         # We multiply by 255 because ToTensor() divides by 255.
@@ -150,11 +146,11 @@ class EnhancerTrainDataset(Dataset):
 
         # 3. Round values to the nearest even number
         # (e.g., 25.1 -> 26, 24.9 -> 24)
-        dirmap_target = torch.round(dirmap_target)
+        dirmap_target = torch.round(dirmap_target / 2.0) * 2.0
 
         # 4. Map the value 180 to 0 using the modulo operator
         # This leaves all other values unchanged (e.g., 178 % 180 = 178)
-        dirmap_target_idx = (dirmap_target % 180)//2  # Now in [0,89]
+        dirmap_target_idx = (dirmap_target % 180)/2  # Now in [0,89]
 
         # 5. Convert to an integer tensor for clean, discrete values
         dirmap_target_idx = dirmap_target_idx.long()
@@ -162,7 +158,6 @@ class EnhancerTrainDataset(Dataset):
         # Apply skeleton transform
         bin  = self.skel_transform(bin)
         mask = self.skel_transform(mask)
-        ref_mask = self.skel_transform(ref_mask)
         skel = self.skel_transform(skel)
 
         ref_white, bin_white, lat_white = ref.max(), bin.max(), lat.max()
@@ -171,7 +166,6 @@ class EnhancerTrainDataset(Dataset):
             ref  = torch.where(mask == 0, ref_white, ref)
             bin  = torch.where(mask == 0, bin_white, bin)
 
-        mask = mask*ref_mask
         return lat, dirmap_target_idx, ref, bin, mask
 
     def __len__(self):
