@@ -119,7 +119,7 @@ class MultiTaskDirMapEnh(nn.Module):
         # --- Step 5: Feed the enhanced map to the segmentation network ---
         out_enh = self.enhancer_net(combined_feature_map)
 
-        return out_dirmap, out_enh
+        return out_dirmap, out_enh, combined_feature_map
 
 
 

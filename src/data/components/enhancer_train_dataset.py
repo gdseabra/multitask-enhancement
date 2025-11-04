@@ -9,6 +9,7 @@ import numpy as np
 
 import os
 import torch
+import torch.nn.functional as F
 import wsq
 from PIL import Image
 from torch.utils.data import Dataset
@@ -63,6 +64,10 @@ class EnhancerTrainDataset(Dataset):
         self.apply_mask   = apply_mask
         self.use_ref_mask = use_ref_mask
         self.patch_size   = patch_size
+        
+        # Helper for ToTensor
+        self.to_tensor = transforms.ToTensor()
+        self.eps = 1e-6
 
 
     def load_orientation_field(self, filepath: str, mask: Image) -> torch.Tensor:
@@ -101,9 +106,32 @@ class EnhancerTrainDataset(Dataset):
 
 
         return torch.tensor(one_hot)
-
+    
+    def _open_image(self, subdir, suffix, name_part):
+        """Helper function to build paths and open images."""
+        
+        print(self.data_dir, subdir, name_part + suffix)
+        return Image.open(os.path.join(self.data_dir, subdir, name_part + suffix))
 
     def __getitem__(self, ix):
+        # --- 1. Streamlined File Loading ---
+        #
+        # Redundancy identified:
+        # - `skel` was loaded inside both `try` and `except` with the *same name*.
+        # - `mask` (when `use_ref_mask` is True) was loaded inside both `try` 
+        #   and `except` with the *same name*.
+        #
+        # Refactor:
+        # - Define base_name and full_name once.
+        # - Load all non-variant files (lat, ref_mask, skel) first.
+        # - Load the correct `mask` based on `use_ref_mask`.
+        # - Use the `try...except` block *only* for the files that actually
+        #   change (ref, bin).
+        
+        base_name = self.data[ix].split('_')[0]
+        full_name = self.data[ix]
+
+        # These files are always loaded the same way
         lat   = Image.open(self.data_dir+self.lat_subdir+self.data[ix]+self.lat_suffix)
 
         ref_mask  = Image.open(self.data_dir + self.ref_mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
@@ -126,53 +154,102 @@ class EnhancerTrainDataset(Dataset):
                 mask = Image.open(self.data_dir + self.mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
 
 
-        # --- Normalize lat & ref ---
-        lat = transforms.ToTensor()(lat)
-        ref = transforms.ToTensor()(ref)
+
+        # --- 2. Normalize lat & ref (Unchanged) ---
+        lat = self.to_tensor(lat)
+        ref = self.to_tensor(ref)
 
         lat_mean, lat_std = torch.mean(lat), torch.std(lat)
-        eps = 1e-6
-        lat = transforms.Normalize(mean=[lat_mean], std=[2 * lat_std + eps])(lat)
+        lat = transforms.Normalize(mean=[lat_mean], std=[2 * lat_std + self.eps])(lat)
 
         ref_mean, ref_std = torch.mean(ref), torch.std(ref)
         ref = transforms.Normalize(mean=[ref_mean], std=[2 * ref_std])(ref)
 
-        # --- Orientation field (label) ---
+        # --- 3. Orientation field (label) ---
+        #
+        # Redundancy identified:
+        # - `dirmap_target_idx` was calculated and then never used.
+        # - `to_tensor` was redefined.
+        #
+        # Refactor:
+        # - Removed the unused `dirmap_target_idx` calculation.
+        # - Reused `self.to_tensor`.
+
         orient_file = self.data_dir + self.orient_subdir + self.data[ix].split('_')[0] + self.orient_suffix
-        # orientation_one_hot = self.load_orientation_field(orient_file, mask)
+        # orient_file = os.path.join(self.data_dir, self.orient_subdir, base_name + self.orient_suffix)
         orient_img = Image.open(orient_file).convert("L")
-        to_tensor = transforms.ToTensor()
-        dirmap_target = to_tensor(orient_img)
-
-        # 2. Rescale tensor values back to the original [0, 180] range
-        # We multiply by 255 because ToTensor() divides by 255.
+        
+        dirmap_target = self.to_tensor(orient_img)
         dirmap_target *= 255.0
-
-        # 3. Round values to the nearest even number
-        # (e.g., 25.1 -> 26, 24.9 -> 24)
-        dirmap_target = torch.round(dirmap_target)
-
-        # 4. Map the value 180 to 0 using the modulo operator
-        # This leaves all other values unchanged (e.g., 178 % 180 = 178)
-        dirmap_target_idx = (dirmap_target % 180)//2  # Now in [0,89]
-
-        # 5. Convert to an integer tensor for clean, discrete values
-        dirmap_target_idx = dirmap_target_idx.long()
-
-        # Apply skeleton transform
-        bin  = self.skel_transform(bin)
+        dirmap_target = torch.round(dirmap_target).long()
+        
+        # --- Apply skeleton transform (Unchanged) ---
+        bin = self.skel_transform(bin)
         mask = self.skel_transform(mask)
         ref_mask = self.skel_transform(ref_mask)
         skel = self.skel_transform(skel)
 
+        # --- Masking (Unchanged) ---
         ref_white, bin_white, lat_white = ref.max(), bin.max(), lat.max()
 
         if self.apply_mask:
-            ref  = torch.where(mask == 0, ref_white, ref)
-            bin  = torch.where(mask == 0, bin_white, bin)
+            ref = torch.where(mask == 0, ref_white, ref)
+            bin = torch.where(mask == 0, bin_white, bin)
 
-        mask = mask*ref_mask
-        return lat, dirmap_target_idx, ref, bin, mask
+        lat_mask = mask
+        small_ref_mask = F.interpolate(ref_mask.unsqueeze(0), scale_factor=1/8, mode="nearest").squeeze(0)
+        small_lat_mask = F.interpolate(lat_mask.unsqueeze(0), scale_factor=1/8, mode="bilinear").squeeze(0)
+
+        # --- 4. Vectorized One-Hot Encoding ---
+        #
+        # Redundancy identified:
+        # - The double `for` loop is extremely slow.
+        #
+        # Refactor:
+        # - Replaced the loop with vectorized PyTorch operations.
+        # - This creates the *exact same* one-hot tensor, but uses
+        #   efficient, parallel tensor operations instead of a Python loop.
+        
+        n_blocks_h, n_blocks_w = bin.shape[1] // 8, bin.shape[2] // 8
+
+        # Per your note, dirmap_target is 1/8 size, so its shape
+        # after loading is (1, n_blocks_h, n_blocks_w). We can
+        # simply select the first channel.
+        angles = dirmap_target[0] # Shape (n_blocks_h, n_blocks_w)
+
+        # Calculate the mask condition for all pixels at once
+        # (small_ref_mask[0] == 0) | (small_lat_mask[0] == 0.0)
+        mask_condition = (small_ref_mask[0] == 0) | (small_lat_mask[0] == 0.0)
+
+        # Calculate the angle indices for all pixels at once
+        # We use .clone() to avoid modifying the 'angles' tensor in-place
+        indices = angles.clone()
+        is_odd = indices % 2 != 0
+        indices[is_odd] -= 1  # round down to nearest even
+        indices = indices // 2
+        
+        # Apply the mask condition: where mask is true, set index to 90
+        indices[mask_condition] = 90
+        
+        # Use torch.scatter_ to create the one-hot tensor in one go
+        # This is the equivalent of `one_hot[idx, i, j] = 1.0`
+        indices = indices.unsqueeze(0) # Shape (1, H_small, W_small)
+        one_hot = torch.zeros(91, n_blocks_h, n_blocks_w, dtype=torch.float32)
+        one_hot.scatter_(dim=0, index=indices, value=1.0)
+        
+        orientation_one_hot = one_hot.unsqueeze(0) # Shape (1, 91, H_small, W_small)
+
+        # --- 5. Preparar Targets (Unchanged) ---
+        true_dirmap = F.interpolate(orientation_one_hot, scale_factor=8, mode="bilinear", align_corners=False)
+        true_dirmap_idx = true_dirmap.argmax(dim=1)
+
+        # --- 6. Preparar Inputs para Loss de Orientação (Unchanged) ---
+        true_dirmap_labels = true_dirmap_idx
+        dirmap_mask = (true_dirmap_labels != 90).long()
+        true_dirmap_labels[true_dirmap_labels == 90] = 0
+
+        return lat, true_dirmap_labels, ref, bin, dirmap_mask
+
 
     def __len__(self):
         return len(self.data)

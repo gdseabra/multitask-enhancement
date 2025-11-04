@@ -43,6 +43,6 @@ train: True
 test: False
 
 # simply provide checkpoint path to resume training
-# ckpt_path: /home/seabra/fingerprint-enhancement/logs/train/runs/2025-10-23_19-02-41/checkpoints/epoch_011.ckpt
+# ckpt_path: /storage/seabra/wandb_logs/runs/2025-10-31_17-11-59/checkpoints/epoch_009.ckpt
 # seed for random number generators in pytorch, numpy and python.random
 seed: null
