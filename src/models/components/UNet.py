@@ -26,6 +26,35 @@ class DoubleConv(nn.Module):
         return self.double_conv(x)
 
 
+class DoubleConvWithPooling(nn.Module):
+    """(convolution => [BN] => ReLU => MaxPool2d) * 2"""
+
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super().__init__()
+        if not mid_channels:
+            mid_channels = out_channels
+        
+        # Using nn.Sequential for each block for clarity
+        self.conv_block1 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)  # Added Max Pooling
+        )
+        
+        self.conv_block2 = nn.Sequential(
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)  # Added Max Pooling
+        )
+
+    def forward(self, x):
+        x = self.conv_block1(x)
+        x = self.conv_block2(x)
+        return x
+
+
 class Down(nn.Module):
     """Downscaling with maxpool then double conv"""
 
@@ -43,16 +72,19 @@ class Down(nn.Module):
 class Up(nn.Module):
     """Upscaling then double conv"""
 
-    def __init__(self, in_channels, out_channels, bilinear=True):
+    def __init__(self, in_channels, out_channels, bilinear=True, conv_block=DoubleConv):
+        """
+        Added conv_block argument to flexibly change the convolution type.
+        """
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+            self.conv = conv_block(in_channels, out_channels, in_channels // 2)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConv(in_channels, out_channels)
+            self.conv = conv_block(in_channels, out_channels)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -73,10 +105,11 @@ class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
+        self.pool = nn.AvgPool2d(2)  # Added 2x2 Average Pooling
 
     def forward(self, x):
         x = self.conv(x)
-        # return F.interpolate(x, scale_factor=1/4, mode='bilinear')
+        x = self.pool(x)  # Apply pooling after convolution
         return x
 
 
@@ -98,7 +131,10 @@ class UNet(nn.Module):
         self.up1 = (Up(1024, 512 // factor, bilinear))
         self.up2 = (Up(512, 256 // factor, bilinear))
         self.up3 = (Up(256, 128 // factor, bilinear))
-        self.up4 = (Up(128, 64, bilinear))
+        
+        # Apply the DoubleConvWithPooling only to the last Up block (up4)
+        self.up4 = (Up(128, 64, bilinear, conv_block=DoubleConvWithPooling))
+        
         self.outc = (OutConv(64, out_ch))
 
     def forward(self, x):
@@ -134,4 +170,29 @@ if __name__ == '__main__':
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
+    print("--- Model Summary (with changes) ---")
     summary(model, (3, 256, 256))
+    
+    # Example to trace tensor shapes:
+    print("\n--- Tracing Tensor Shapes ---")
+    test_tensor = torch.randn(1, 3, 256, 256).to(device)
+    x1 = model.inc(test_tensor)
+    print(f'x1 (inc): \t\t{x1.shape}')
+    x2 = model.down1(x1)
+    print(f'x2 (down1): \t\t{x2.shape}')
+    x3 = model.down2(x2)
+    print(f'x3 (down2): \t\t{x3.shape}')
+    x4 = model.down3(x3)
+    print(f'x4 (down3): \t\t{x4.shape}')
+    x5 = model.down4(x4)
+    print(f'x5 (down4): \t\t{x5.shape}')
+    x = model.up1(x5, x4)
+    print(f'up1 output: \t\t{x.shape}')
+    x = model.up2(x, x3)
+    print(f'up2 output: \t\t{x.shape}')
+    x = model.up3(x, x2)
+    print(f'up3 output: \t\t{x.shape}')
+    x = model.up4(x, x1)
+    print(f'up4 (with pooling): \t{x.shape}') # Notice the size reduction here
+    logits = model.outc(x)
+    print(f'logits (outc): \t\t{logits.shape}') # And the final size reduction here

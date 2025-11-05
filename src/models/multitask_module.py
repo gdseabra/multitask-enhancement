@@ -231,8 +231,6 @@ class EnhancerLitModule(LightningModule):
         small_dirmap_mask = F.interpolate(roi_mask, scale_factor=1/8, mode="bilinear") 
 
         # --- Start of Complex Target Preparation ---
-        # The goal is to convert low-res angle labels (0-179) into full-res
-        # class indices (0-89) and a background mask.
         
         # 'indices' holds the low-res angle labels. Shape: (B, 1, H/8, W/8)
         indices = true_dirmap_labels 
@@ -249,50 +247,23 @@ class EnhancerLitModule(LightningModule):
         # Class 90 will serve as the "ignore" or "background" class
         indices[small_dirmap_mask == 0] = 90
         
-        # Initializes a zero tensor for one-hot encoding
-        # Shape: (B, 91, H/8, W/8) (90 classes + 1 'ignore' class)
-        one_hot = torch.zeros(indices.shape[0], 91, indices.shape[-2], indices.shape[-1], dtype=torch.float32, device=indices.device)
-
-        # Populates the 'one_hot' tensor. 
-        # For each pixel, it places a 1.0 at the channel index specified by 'indices'.
-        # 'indices' shape (B, 1, H/8, W/8) is broadcast-compatible for scatter.
-        one_hot.scatter_(dim=1, index=indices, value=1.0)
-        
-        # 'orientation_one_hot' is the low-res one-hot map. Shape: (B, 91, H/8, W/8)
-        orientation_one_hot = one_hot
-
-        # Upsamples the one-hot target map by 8x (from H/8, W/8 to H, W)
-        # This matches the full resolution of the prediction 'pred_dirmap'
-        # Bilinear interpolation creates "soft" boundaries between classes.
-        # Output Shape: (B, 91, H, W)
-        true_dirmap = F.interpolate(orientation_one_hot, scale_factor=8, mode="bilinear", align_corners=False)
-        
-        # Converts the "soft" upsampled map back to "hard" class indices
-        # by taking the argmax along the channel (class) dimension.
-        # Output Shape: (B, H, W)
-        true_dirmap_idx = true_dirmap.argmax(dim=1)
-
-        # Re-assigns 'true_dirmap_labels' to this new full-resolution index map
-        # Adds a channel dimension back.
-        # Output Shape: (B, 1, H, W). 
-        true_dirmap_labels = true_dirmap_idx.unsqueeze(1)
         
         # Creates a binary mask. Pixels are 1 (keep) if they are NOT the
         # 'ignore' class (90), and 0 (ignore) if they are.
-        # Output Shape: (B, 1, H, W). 
-        dirmap_mask = (true_dirmap_labels != 90).long()
+        # Output Shape: (B, 1, H/8, W/8). 
+        dirmap_mask = (indices != 90).long()
         
         # Sets the 'ignore' class pixels (90) to 0.
         # This is safe because 'dirmap_mask' already knows to ignore them.
         # This step makes the labels (0-89) compatible with the
         # 90-class prediction 'pred_dirmap'.
-        true_dirmap_labels[true_dirmap_labels == 90] = 0
+        indices[indices == 90] = 0
         # --- End of Target Preparation ---
 
         
         # Calculates the main orientation loss (e.g., CrossEntropy)
         # The loss function likely uses 'dirmap_mask' to ignore background pixels.
-        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, dirmap_mask)
+        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, indices, dirmap_mask)
         
         # Calculates a coherence/regularization loss for orientation
         loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, dirmap_mask)

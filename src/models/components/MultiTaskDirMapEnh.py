@@ -99,9 +99,11 @@ class MultiTaskDirMapEnh(nn.Module):
         # --- Step 1: Get orientation map from U-Net ---
         # orientation_map shape: (B, 90, H, W)
         out_dirmap = self.dirmap_net(x)
+
+        out_dirmap_upsampled = F.interpolate(out_dirmap, size=x.shape[2:], mode='bilinear', align_corners=False)
         
         # Apply softmax to get probabilities for each orientation at each pixel
-        orientation_probs = torch.softmax(out_dirmap, dim=1)
+        orientation_probs = torch.softmax(out_dirmap_upsampled, dim=1)
 
         # --- Step 2: Get Gabor filter responses ---
         # gabor_responses shape: (B, 90, H, W)
