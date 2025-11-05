@@ -181,7 +181,7 @@ class EnhancerTrainDataset(Dataset):
         
         dirmap_target = self.to_tensor(orient_img)
         dirmap_target *= 255.0
-        dirmap_target = torch.round(dirmap_target).long()
+        dirmap_target = torch.round(dirmap_target).long() % 180
         
         # --- Apply skeleton transform (Unchanged) ---
         bin = self.skel_transform(bin)
@@ -196,59 +196,11 @@ class EnhancerTrainDataset(Dataset):
             ref = torch.where(mask == 0, ref_white, ref)
             bin = torch.where(mask == 0, bin_white, bin)
 
-        lat_mask = mask
-        small_ref_mask = F.interpolate(ref_mask.unsqueeze(0), scale_factor=1/8, mode="nearest").squeeze(0)
-        small_lat_mask = F.interpolate(lat_mask.unsqueeze(0), scale_factor=1/8, mode="bilinear").squeeze(0)
+        dirmap_mask = torch.round(mask*ref_mask).float()
 
-        # --- 4. Vectorized One-Hot Encoding ---
-        #
-        # Redundancy identified:
-        # - The double `for` loop is extremely slow.
-        #
-        # Refactor:
-        # - Replaced the loop with vectorized PyTorch operations.
-        # - This creates the *exact same* one-hot tensor, but uses
-        #   efficient, parallel tensor operations instead of a Python loop.
-        
-        n_blocks_h, n_blocks_w = bin.shape[1] // 8, bin.shape[2] // 8
 
-        # Per your note, dirmap_target is 1/8 size, so its shape
-        # after loading is (1, n_blocks_h, n_blocks_w). We can
-        # simply select the first channel.
-        angles = dirmap_target[0] # Shape (n_blocks_h, n_blocks_w)
 
-        # Calculate the mask condition for all pixels at once
-        # (small_ref_mask[0] == 0) | (small_lat_mask[0] == 0.0)
-        mask_condition = (small_ref_mask[0] == 0) | (small_lat_mask[0] == 0.0)
-
-        # Calculate the angle indices for all pixels at once
-        # We use .clone() to avoid modifying the 'angles' tensor in-place
-        indices = angles.clone()
-        is_odd = indices % 2 != 0
-        indices[is_odd] -= 1  # round down to nearest even
-        indices = indices // 2
-        
-        # Apply the mask condition: where mask is true, set index to 90
-        indices[mask_condition] = 90
-        
-        # Use torch.scatter_ to create the one-hot tensor in one go
-        # This is the equivalent of `one_hot[idx, i, j] = 1.0`
-        indices = indices.unsqueeze(0) # Shape (1, H_small, W_small)
-        one_hot = torch.zeros(91, n_blocks_h, n_blocks_w, dtype=torch.float32)
-        one_hot.scatter_(dim=0, index=indices, value=1.0)
-        
-        orientation_one_hot = one_hot.unsqueeze(0) # Shape (1, 91, H_small, W_small)
-
-        # --- 5. Preparar Targets (Unchanged) ---
-        true_dirmap = F.interpolate(orientation_one_hot, scale_factor=8, mode="bilinear", align_corners=False)
-        true_dirmap_idx = true_dirmap.argmax(dim=1)
-
-        # --- 6. Preparar Inputs para Loss de Orientação (Unchanged) ---
-        true_dirmap_labels = true_dirmap_idx
-        dirmap_mask = (true_dirmap_labels != 90).long()
-        true_dirmap_labels[true_dirmap_labels == 90] = 0
-
-        return lat, true_dirmap_labels, ref, bin, dirmap_mask
+        return lat, dirmap_target, ref, bin, dirmap_mask
 
 
     def __len__(self):

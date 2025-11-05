@@ -195,51 +195,122 @@ class EnhancerLitModule(LightningModule):
     def on_train_start(self) -> None:
         self.val_loss.reset(); self.val_ori_loss.reset(); self.val_enh_loss.reset(); self.val_loss_best.reset()
 
+    # Defines a single model step (e.g., for one training or validation batch)
     def model_step(self, batch: Tuple[torch.Tensor, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        
+        # Unpacks the batch tuple into its components.
+        # x: Input tensor (e.g., images), shape (B, C_in, H_small, W_small)
+        # true_dirmap_labels: Ground truth orientation labels at a small resolution
+        #                     Shape: (B, 1, H/8, W/8)
+        # y_orig, y_bin: Ground truth for enhancement (original and binary)
+        # roi_mask: Region of Interest mask, full resolution, Shape: (B, 1, H, W)
         x, true_dirmap_labels, y_orig, y_bin, roi_mask = batch
         
         # --- Forward ---
-        # pred_dirmap são os logits (B, 90, H, W)
+        # Runs the model's forward pass on the input 'x'
+        # pred_dirmap: Predicted orientation logits. (B, 90, H, W)
+        # pred_enh: Predicted enhancement, likely (B, 2, H, W)
+        # inter_gabor: Intermediate Gabor features (B, 1, H, W)
         pred_dirmap, pred_enh, inter_gabor = self.forward(x)
         
         # --- Preparar Predições ---
+        # Prepares (unpacks) the predictions for loss calculation
+        
+        # Extracts the 'original' (grayscale) prediction from channel 0
+        # Extracts the 'binary' (mask) prediction from channel 1
         pred_orig, pred_bin = pred_enh[:,0,:,:], pred_enh[:,1,:,:]
-        # Converte logits do dirmap para probabilidades (necessário para as novas losses)
-        # pred_dirmap_probs = torch.sigmoid(pred_dirmap)
 
-        # --- Preparar Targets ---
+        # --- Prepare Targets ---
+        # Prepares (unpacks) the ground truth targets for loss calculation
+        
+        # Extracts 'original' and 'binary' ground truth, removing channel dim
         true_orig, true_bin = y_orig[:, 0, :, :], y_bin[:, 0, :, :]
-        # true_dirmap = F.interpolate(y_dirmap, size=true_bin.shape[1:], mode="bilinear", align_corners=False)
-        # # Target labels (B, H, W)
-        # true_dirmap_idx = true_dirmap.argmax(dim=1)
+        
+        # Downsamples the full-resolution ROI mask to match the initial label map size (1/8th scale)
+        # Output Shape: (B, 1, H/8, W/8)
+        small_dirmap_mask = F.interpolate(roi_mask, scale_factor=1/8, mode="bilinear") 
+
+        # --- Start of Complex Target Preparation ---
+        # The goal is to convert low-res angle labels (0-179) into full-res
+        # class indices (0-89) and a background mask.
+        
+        # 'indices' holds the low-res angle labels. Shape: (B, 1, H/8, W/8)
+        indices = true_dirmap_labels 
+        
+        # Finds all pixels with odd-numbered angles
+        is_odd = indices % 2 != 0
+        # Rounds odd angles down (e.g., 179 -> 178)
+        indices[is_odd] -= 1
+        # Maps angle ranges [0,1], [2,3]...[178,179] to classes 0, 1... 89
+        indices = indices // 2
+        # 'indices' now holds classes 0-89. Shape: (B, 1, H/8, W/8)
+        
+        # Sets all pixels *outside* the downsampled ROI to class 90
+        # Class 90 will serve as the "ignore" or "background" class
+        indices[small_dirmap_mask == 0] = 90
+        
+        # Initializes a zero tensor for one-hot encoding
+        # Shape: (B, 91, H/8, W/8) (90 classes + 1 'ignore' class)
+        one_hot = torch.zeros(indices.shape[0], 91, indices.shape[-2], indices.shape[-1], dtype=torch.float32, device=indices.device)
+
+        # Populates the 'one_hot' tensor. 
+        # For each pixel, it places a 1.0 at the channel index specified by 'indices'.
+        # 'indices' shape (B, 1, H/8, W/8) is broadcast-compatible for scatter.
+        one_hot.scatter_(dim=1, index=indices, value=1.0)
+        
+        # 'orientation_one_hot' is the low-res one-hot map. Shape: (B, 91, H/8, W/8)
+        orientation_one_hot = one_hot
+
+        # Upsamples the one-hot target map by 8x (from H/8, W/8 to H, W)
+        # This matches the full resolution of the prediction 'pred_dirmap'
+        # Bilinear interpolation creates "soft" boundaries between classes.
+        # Output Shape: (B, 91, H, W)
+        true_dirmap = F.interpolate(orientation_one_hot, scale_factor=8, mode="bilinear", align_corners=False)
+        
+        # Converts the "soft" upsampled map back to "hard" class indices
+        # by taking the argmax along the channel (class) dimension.
+        # Output Shape: (B, H, W)
+        true_dirmap_idx = true_dirmap.argmax(dim=1)
+
+        # Re-assigns 'true_dirmap_labels' to this new full-resolution index map
+        # Adds a channel dimension back.
+        # Output Shape: (B, 1, H, W). 
+        true_dirmap_labels = true_dirmap_idx.unsqueeze(1)
+        
+        # Creates a binary mask. Pixels are 1 (keep) if they are NOT the
+        # 'ignore' class (90), and 0 (ignore) if they are.
+        # Output Shape: (B, 1, H, W). 
+        dirmap_mask = (true_dirmap_labels != 90).long()
+        
+        # Sets the 'ignore' class pixels (90) to 0.
+        # This is safe because 'dirmap_mask' already knows to ignore them.
+        # This step makes the labels (0-89) compatible with the
+        # 90-class prediction 'pred_dirmap'.
+        true_dirmap_labels[true_dirmap_labels == 90] = 0
+        # --- End of Target Preparation ---
 
         
-        # # --- Preparar Inputs para Loss de Orientação ---
-        # # Labels precisam ter dimensão de canal: (B, H, W) -> (B, 1, H, W)
-        # true_dirmap_labels = true_dirmap_idx.unsqueeze(1)
-        # # Usar 'true_dirmap_labels==90' como a máscara ROI: (B, H, W) -> (B, 1, H, W)
-        # roi_mask = (true_dirmap_labels != 90).long()
-
-        # # remove values de máscara
-        # true_dirmap_labels[true_dirmap_labels == 90] = 0
-
-        # --- Calcular Losses ---
+        # Calculates the main orientation loss (e.g., CrossEntropy)
+        # The loss function likely uses 'dirmap_mask' to ignore background pixels.
+        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, dirmap_mask)
         
-        # 1. Loss de Orientação (NOVA LÓGICA)
-        loss_ori_weighted = self.orientation_loss_fn(pred_dirmap, true_dirmap_labels, roi_mask)
-        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, roi_mask)
+        # Calculates a coherence/regularization loss for orientation
+        loss_ori_coherence = self.coherence_loss_fn(pred_dirmap, dirmap_mask)
         
-        # Soma ponderada dos componentes da loss de orientação
+        # Combines the orientation losses, weighted by hyperparameters
         ori_loss = (self.hparams.w_ori * loss_ori_weighted) + \
                    (self.hparams.w_coh * loss_ori_coherence)
         
-        # 2. Loss de Enhancement (Inalterada)
+        # Calculates the enhancement loss
+        # 50% MSE loss for the 'original' (grayscale) regression task
+        # 50% BCE loss for the 'binary' (mask) segmentation task
         enh_loss = (0.5 * self.mse_criterion(pred_orig, true_orig) + \
                     0.5 * self.bce_criterion(pred_bin, true_bin))
         
-        # 3. Loss Total (Inalterada)
+        # Sums the two main loss components to get the final loss
         total_loss = ori_loss + enh_loss
         
+        # Returns a dictionary of losses for logging
         return {"ori_loss": ori_loss, "enh_loss": enh_loss, "total_loss": total_loss}
     
     def training_step(
