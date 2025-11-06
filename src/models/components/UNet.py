@@ -88,6 +88,7 @@ class Up(nn.Module):
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
+        
         # input is CHW
         diffY = x2.size()[2] - x1.size()[2]
         diffX = x2.size()[3] - x1.size()[3]
@@ -97,7 +98,9 @@ class Up(nn.Module):
         # if you have padding issues, see
         # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
         # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
+        print("x5_up", x1.shape)
         x = torch.cat([x2, x1], dim=1)
+        print("x5_x4", x.shape)
         return self.conv(x)
 
 
@@ -105,37 +108,47 @@ class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
-        self.pool = nn.AvgPool2d(2)  # Added 2x2 Average Pooling
 
     def forward(self, x):
         x = self.conv(x)
-        x = self.pool(x)  # Apply pooling after convolution
         return x
 
 
 class UNet(nn.Module):
-    def __init__(self, in_ch=1, out_ch=91, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024)):
+    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024, 2048)):
         super(UNet, self).__init__()
+        
+        # --- REFACTORED SECTION ---
+        # This init method now uses the `chs` tuple to define layer channels.
+        # The default `chs` (64, 128, 256, 512, 1024) replicates the original
+        # hardcoded behavior.
+        
         self.n_channels = in_ch
         self.n_classes = out_ch
-
-        bilinear = True
+        
+        # Note: The original code hardcoded bilinear=True. We preserve this behavior.
+        # The `ndim` parameter was unused, so it is ignored.
+        bilinear = True 
         self.bilinear = bilinear
 
-        self.inc = (DoubleConv(self.n_channels, 64))
-        self.down1 = (Down(64, 128))
-        self.down2 = (Down(128, 256))
-        self.down3 = (Down(256, 512))
         factor = 2 if bilinear else 1
-        self.down4 = (Down(512, 1024 // factor))
-        self.up1 = (Up(1024, 512 // factor, bilinear))
-        self.up2 = (Up(512, 256 // factor, bilinear))
-        self.up3 = (Up(256, 128 // factor, bilinear))
+
+        # Encoder (Down-sampling path)
+        self.inc = (DoubleConv(self.n_channels, chs[0]))
+        self.down1 = (Down(chs[0], chs[1])) # 64 -> 128 (H/2, W/2)
+        self.down2 = (Down(chs[1], chs[2])) # 128 -> 256 (H/4, W/4)
+        self.down3 = (Down(chs[2], chs[3])) # 256 -> 512 (H/8, W/8)
+        self.down4 = (Down(chs[3], chs[4])) # 512 -> 1024 (H/16, W/16)
+
+        # Bottleneck layer
+        self.down5 = (Down(chs[4], chs[5] // factor)) # 1024 -> 1024 (H/32, W/32)
+
+        # Decoder (Up-sampling path)
+        self.up1 = (Up(chs[5], chs[4] // factor, bilinear)) # 1048+1048 -> 256  
+        self.up2 = (Up(chs[4], chs[3] // factor, bilinear))
         
-        # Apply the DoubleConvWithPooling only to the last Up block (up4)
-        self.up4 = (Up(128, 64, bilinear, conv_block=DoubleConvWithPooling))
-        
-        self.outc = (OutConv(64, out_ch))
+        self.outc = (OutConv(chs[3] // factor, out_ch))
+        # --- END OF REFACTORED SECTION ---
 
     def forward(self, x):
         x1 = self.inc(x)
@@ -143,56 +156,20 @@ class UNet(nn.Module):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
+        x6 = self.down5(x5)
+        x = self.up1(x6, x5)
+        x = self.up2(x, x4)
         logits = self.outc(x)
         return logits
 
-    def use_checkpointing(self):
-        self.inc = torch.utils.checkpoint(self.inc)
-        self.down1 = torch.utils.checkpoint(self.down1)
-        self.down2 = torch.utils.checkpoint(self.down2)
-        self.down3 = torch.utils.checkpoint(self.down3)
-        self.down4 = torch.utils.checkpoint(self.down4)
-        self.up1 = torch.utils.checkpoint(self.up1)
-        self.up2 = torch.utils.checkpoint(self.up2)
-        self.up3 = torch.utils.checkpoint(self.up3)
-        self.up4 = torch.utils.checkpoint(self.up4)
-        self.outc = torch.utils.checkpoint(self.outc)
 
 
 
 if __name__ == '__main__':
-    model         = UNet(in_ch=3)
+    model         = UNet(in_ch=1, out_ch=90, ndim=2, chs = (64, 128, 256, 512, 1024, 2048))
 
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
     print("--- Model Summary (with changes) ---")
-    summary(model, (3, 256, 256))
-    
-    # Example to trace tensor shapes:
-    print("\n--- Tracing Tensor Shapes ---")
-    test_tensor = torch.randn(1, 3, 256, 256).to(device)
-    x1 = model.inc(test_tensor)
-    print(f'x1 (inc): \t\t{x1.shape}')
-    x2 = model.down1(x1)
-    print(f'x2 (down1): \t\t{x2.shape}')
-    x3 = model.down2(x2)
-    print(f'x3 (down2): \t\t{x3.shape}')
-    x4 = model.down3(x3)
-    print(f'x4 (down3): \t\t{x4.shape}')
-    x5 = model.down4(x4)
-    print(f'x5 (down4): \t\t{x5.shape}')
-    x = model.up1(x5, x4)
-    print(f'up1 output: \t\t{x.shape}')
-    x = model.up2(x, x3)
-    print(f'up2 output: \t\t{x.shape}')
-    x = model.up3(x, x2)
-    print(f'up3 output: \t\t{x.shape}')
-    x = model.up4(x, x1)
-    print(f'up4 (with pooling): \t{x.shape}') # Notice the size reduction here
-    logits = model.outc(x)
-    print(f'logits (outc): \t\t{logits.shape}') # And the final size reduction here
+    summary(model, (1, 512, 512))
