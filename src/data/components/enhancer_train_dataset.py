@@ -46,9 +46,9 @@ class EnhancerTrainDataset(Dataset):
 
         self.lat_suffix   = "." + os.listdir(data_dir + lat_subdir)[0].split(".")[-1]
         self.ref_suffix   = "." + os.listdir(data_dir + ref_subdir)[0].split(".")[-1]
-        self.skel_suffix  = "." + os.listdir(data_dir + skel_subdir)[0].split(".")[-1]
+        # self.skel_suffix  = "." + os.listdir(data_dir + skel_subdir)[0].split(".")[-1]
         self.bin_suffix   = "." + os.listdir(data_dir + bin_subdir)[0].split(".")[-1]
-        self.mnt_suffix   = "." + os.listdir(data_dir + mnt_subdir)[0].split(".")[-1]
+        # self.mnt_suffix   = "." + os.listdir(data_dir + mnt_subdir)[0].split(".")[-1]
         self.mask_suffix  = "." + os.listdir(data_dir + mask_subdir)[0].split(".")[-1]
         self.orient_suffix = "." + os.listdir(data_dir + orient_subdir)[0].split(".")[-1]
 
@@ -142,14 +142,14 @@ class EnhancerTrainDataset(Dataset):
         try:
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix] + self.ref_suffix)
             bin   = Image.open(self.data_dir + self.bin_subdir   + self.data[ix] + self.bin_suffix)
-            skel  = Image.open(self.data_dir + self.skel_subdir  + self.data[ix].split('_')[0] + self.skel_suffix)
+            # skel  = Image.open(self.data_dir + self.skel_subdir  + self.data[ix].split('_')[0] + self.skel_suffix)
             if self.use_ref_mask:
                 mask = Image.open(self.data_dir + self.mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
 
         except FileNotFoundError:
             ref   = Image.open(self.data_dir + self.ref_subdir   + self.data[ix].split('_')[0] + self.ref_suffix)
             bin   = Image.open(self.data_dir + self.bin_subdir   + self.data[ix].split('_')[0] + self.bin_suffix)
-            skel  = Image.open(self.data_dir + self.skel_subdir  + self.data[ix].split('_')[0] + self.skel_suffix)
+            # skel  = Image.open(self.data_dir + self.skel_subdir  + self.data[ix].split('_')[0] + self.skel_suffix)
             if self.use_ref_mask:
                 mask = Image.open(self.data_dir + self.mask_subdir + self.data[ix].split('_')[0] + self.mask_suffix)
 
@@ -187,7 +187,7 @@ class EnhancerTrainDataset(Dataset):
         bin = self.skel_transform(bin)
         mask = self.skel_transform(mask)
         ref_mask = self.skel_transform(ref_mask)
-        skel = self.skel_transform(skel)
+        # skel = self.skel_transform(skel)
 
         # --- Masking (Unchanged) ---
         ref_white, bin_white, lat_white = ref.max(), bin.max(), lat.max()

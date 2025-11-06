@@ -76,7 +76,7 @@ class GaborConvLayer(nn.Module):
         return self.conv(x)
 
 class MultiTaskDirMapEnh(nn.Module):
-    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024)):
+    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (32, 64, 128, 256, 512, 1024)):
         super(MultiTaskDirMapEnh, self).__init__()
         
         self.dirmap_net = UNet(in_ch=1, out_ch=90, ndim=ndim, chs=chs)
