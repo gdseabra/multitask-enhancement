@@ -11,7 +11,7 @@ mask_subdir: /lat_masks_after_docs_synth_lats_docs_mixed/mask/
 ref_mask_subdir: /ref_masks_fnet/
 occ_mask_subdir: /occ_mask/
 mnt_subdir: /mnt/
-orient_subdir: /dirmap_gt_downsampled_png/
+orient_subdir: /dirmap_gt_full_png/
 apply_mask: True
 use_ref_mask: False
 # batch_size: 2240 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
