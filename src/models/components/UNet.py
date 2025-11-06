@@ -115,7 +115,7 @@ class OutConv(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (64, 128, 256, 512, 1024, 2048)):
+    def __init__(self, in_ch=1, out_ch=90, ndim=2, chs: tuple[int, ...] = (32, 64, 128, 256, 512, 1024)):
         super(UNet, self).__init__()
         
         # --- REFACTORED SECTION ---
@@ -166,7 +166,7 @@ class UNet(nn.Module):
 
 
 if __name__ == '__main__':
-    model         = UNet(in_ch=1, out_ch=90, ndim=2, chs = (64, 128, 256, 512, 1024, 2048))
+    model         = UNet(in_ch=1, out_ch=90)
 
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
