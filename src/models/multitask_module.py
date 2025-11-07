@@ -389,6 +389,7 @@ class EnhancerLitModule(LightningModule):
         else: # Lógica de patches aqui...
             pass
         for i, name in enumerate(names):
+            name = name.split('/')[-1].split('.')[0]
             gabor   = latent_enh[i, 1, :, :]
             orig    = latent_enh[i, 0, :, :]
             gabor_dirmap = inter_gabor[i, 0, :, :]
