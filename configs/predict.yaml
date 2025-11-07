@@ -17,4 +17,4 @@ tags: ["dev"]
 
 # passing checkpoint path is necessary for evaluation
 # ckpt_path: /home/seabra/fingerprint-enhancement/logs/train/runs/2025-08-15_12-07-34/checkpoints/epoch_030.ckpt
-ckpt_path: /home/seabra/multitask-enhancement/logs/train/runs/2025-11-04_23-31-41/checkpoints/epoch_014.ckpt
+ckpt_path: /home/seabra/multitask-enhancement/logs/train/runs/2025-11-06_04-29-41/checkpoints/epoch_023.ckpt
