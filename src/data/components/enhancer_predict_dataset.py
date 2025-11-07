@@ -18,14 +18,14 @@ class EnhancerPredictionDataset(Dataset):
 
         self.data = [line.strip() for line in lines]
 
-        self.img_suffix   = "." + os.listdir(data_dir + img_subdir)[0].split(".")[-1]
+        self.img_suffix   = "." + lines[0].split(".")[-1]
 
         self.img_subdir   = img_subdir
 
 
 
     def __getitem__(self, ix):
-        img   = Image.open(self.data_dir + self.img_subdir   + self.data[ix] + self.img_suffix)
+        img   = Image.open(self.data_dir + self.img_subdir   + self.data[ix])
 
         # normalizing lat and ref to -1, 1
 
@@ -34,6 +34,10 @@ class EnhancerPredictionDataset(Dataset):
 
         img_mean = torch.mean(img)
         img_std  = torch.std(img)
+
+        # Add a small epsilon to prevent division by zero
+        if img_std == 0:
+            img_std = 1e-4  # A small non-zero value
 
 
         img = transforms.Normalize(mean=[img_mean], std=[2 * img_std])(img)
