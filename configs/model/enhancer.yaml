@@ -41,9 +41,9 @@ net:
 compile: false
 warmup_epochs_dirmap: 0 # Define quantas épocas treinar só a dirmap
 
-# output_path: /storage/seabra/segmentation_study/test_data/tse1k/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
+output_path: /storage/seabra/tse1k_test/multitask_enh_dirmap/
 # output_path: /storage/seabra/segmentation_study/test_data/basen_400/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
 # output_path: /storage/seabra/segmentation_study/test_data/sd27/resunet_nfiq80/resunet_nfiq80_docs_mixed_lat_fnet/
-output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v4_novo/
+# output_path: /storage/seabra/sd27_test/multitask_enh_dirmap_v4_novo/
 
 use_patches: false
