@@ -319,7 +319,7 @@ class ResUNet(nn.Module):
         self,
         in_ch: int = 3,
         ndim: int = 2,
-        chs: tuple[int, ...] = (32, 64, 128, 256, 512),
+        chs: tuple[int, ...] = (32, 64, 128, 256),
         out_ch: int = 1,
     ):
         """Initialize the UNet model.
