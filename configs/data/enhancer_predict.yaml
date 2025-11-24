@@ -1,11 +1,11 @@
 _target_: src.data.enhancer_predict_datamodule.EnhancerPredictionDataModule
 # data_dir: /home/gabriel/fingerprint-enhancement/sample_data/
-data_dir: /storage/seabra/sd27_test/
+# data_dir: /storage/seabra/sd27_test/
 # data_dir: /storage/seabra/basen_train/
-# data_dir: /storage/seabra/tse1k_test/
-# data_list: /tse1k_list_rel.txt
+data_dir: /storage/seabra/tse1k_test/
+data_list: /tse1k_list_rel.txt
 # data_list: /basen_400_list.txt
-data_list: /full_list.txt
+# data_list: /full_list.txt
 img_subdir: /orig/
 # img_subdir: /synth_lats_docs/
 batch_size: 16 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
