@@ -25,7 +25,11 @@ class EnhancerPredictionDataset(Dataset):
 
 
     def __getitem__(self, ix):
-        img   = Image.open(self.data_dir + self.img_subdir   + self.data[ix])
+
+        try:
+            img   = Image.open(self.data_dir + self.img_subdir   + self.data[ix])
+        except:
+            img   = Image.open(self.data_dir + self.img_subdir   + self.data[ix] + ".png")
 
         # normalizing lat and ref to -1, 1
 

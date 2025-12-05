@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchsummary import summary
+from thop import clever_format, profile
 
 from models.components.ResUNet import ResUNet
 from models.components.UNet import UNet
@@ -130,4 +131,14 @@ if __name__ == '__main__':
     device        = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model         = model.to(device)
 
-    summary(model, (1, 256, 256))
+    summary(model, (1, 512, 512))
+        
+    dummy_input   = torch.randn(1, 1, 512, 512).to(device)
+    flops, params = profile(model, (dummy_input, ), verbose=False)
+    #-------------------------------------------------------------------------------#
+    #   flops * 2 because profile does not consider convolution as two operations.
+    #-------------------------------------------------------------------------------#
+    flops         = flops * 2
+    flops, params = clever_format([flops, params], "%.4f")
+    print(f'Total GFLOPs: {flops}')
+    print(f'Total Params: {params}')
